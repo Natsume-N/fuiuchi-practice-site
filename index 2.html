@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ふいうち練習サイト</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;background:#f5f7fb;color:#182033}
+button{font:inherit;cursor:pointer}
+.wrap{max-width:760px;margin:auto;padding:28px 18px}
+h1{text-align:center;font-size:34px;margin:20px 0 8px}.sub{text-align:center;color:#65708a;margin-bottom:30px}
+.card{background:white;border-radius:20px;padding:24px;box-shadow:0 6px 24px #0000000d;margin-bottom:18px}
+.menu{display:grid;gap:14px}.menu button,.choice{border:0;border-radius:16px;padding:20px;font-weight:700;font-size:18px;background:#eef2ff;color:#25336b}
+.hidden{display:none}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.back{border:0;background:transparent;color:#52607a;font-weight:700}.badge{background:#eef2ff;padding:7px 11px;border-radius:999px;font-size:13px}
+.turn{text-align:center;font-weight:800;font-size:22px}.hint{text-align:center;color:#68738a;margin:8px 0 22px}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:14px}.choice{min-height:120px;background:#fff;border:2px solid #e4e8f1;color:#172039;box-shadow:0 4px 14px #0000000a}
+.choice strong{display:block;font-size:24px;margin-bottom:7px}.choice span{font-size:13px;color:#6a7488;font-weight:500}
+.choice:disabled{opacity:.38;cursor:not-allowed}.result{text-align:center;font-size:24px;font-weight:800;padding:18px;border-radius:15px;background:#f2f5fa;margin-top:18px}
+.small{font-size:13px;color:#6d7688;line-height:1.7}.statsgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat{padding:16px;border:1px solid #e6e9f0;border-radius:14px}.stat b{font-size:25px;display:block;margin-top:5px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:10px;border-bottom:1px solid #e9ecf2;text-align:center}th{background:#f7f8fb}
+.note{padding:14px;border-radius:14px;background:#fff8df;margin-top:15px;font-size:14px;line-height:1.7}.error{background:#ffe8e8;color:#9b1c1c}
+.role{font-size:16px;text-align:center;font-weight:800;margin-bottom:8px}
+@media(max-width:560px){.choices,.statsgrid{grid-template-columns:1fr}.choice{min-height:95px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<section id="home">
+<h1>ふいうち練習サイト</h1>
+<p class="sub">人間の選択を統計化し、その変化をCPUが学習します。</p>
+<div class="menu">
+<button onclick="openGame()">🎮 ゲームを遊ぶ</button>
+<button onclick="openStats()">📊 統計を見る</button>
+<button onclick="show('rules')">📖 ルール</button>
+</div>
+</section>
+
+<section id="game" class="hidden">
+<div class="topbar"><button class="back" onclick="show('home')">← 戻る</button><span class="badge" id="gameCount">接続中…</span></div>
+<div class="card">
+<div class="role" id="roleLabel"></div>
+<div class="turn" id="turnLabel"></div>
+<div class="hint" id="hint"></div>
+<div class="choices" id="choices"></div>
+<div id="result"></div>
+</div>
+</section>
+
+<section id="stats" class="hidden">
+<div class="topbar"><button class="back" onclick="show('home')">← 戻る</button><span class="badge" id="unlock"></span></div>
+<div class="card">
+<h2>📊 累積統計</h2>
+<p class="small">最初の100試合は理論値1/9を使用します。100試合終了後に統計を公開し、101試合目からCPUは全ユーザーの累積選択率を反映します。データはリセットされません。</p>
+<div class="statsgrid">
+<div class="stat">総試合数<b id="totalGames">—</b></div>
+<div class="stat">決着までの平均ターン<b id="avgTurn">—</b></div>
+</div>
+<div id="statTable" style="margin-top:20px"></div>
+</div>
+</section>
+
+<section id="rules" class="hidden">
+<div class="topbar"><button class="back" onclick="show('home')">← 戻る</button></div>
+<div class="card">
+<h2>📖 ルール</h2>
+<ul>
+<li>ゲーム開始時、あなたは攻撃側・防御側のどちらかに50%ずつの確率でランダムに割り当てられます。</li>
+<li>攻撃側は「攻撃技」か「ふいうち」を選びます。</li>
+<li>防御側は「剣舞」か「攻撃」を選びます。</li>
+<li>攻撃技 vs 剣舞 → <b>攻撃側の勝ち</b></li>
+<li>攻撃技 vs 攻撃 → <b>防御側の勝ち</b></li>
+<li>ふいうち vs 剣舞 → <b>引き分け</b></li>
+<li>ふいうち vs 攻撃 → <b>攻撃側の勝ち</b></li>
+<li>決着した時点でゲーム終了です。</li>
+<li>ふいうちは最大8回まで使用できます。</li>
+<li>ふいうちを8回使用して全て引き分けだった場合、第9ターンは攻撃技しか選べません。</li>
+<li>最長9ターンです。</li>
+</ul>
+<div class="note"><b>実験の仕組み</b><br>最初の100試合は理論値1/9を基準にCPUが動きます。100試合終了後に統計を公開し、101試合目からCPUは人間の累積選択率を反映します。100試合ごとのリセットはありません。以降も試合が追加されるたびに累積統計が更新され、CPUの確率も変化します。</div>
+</div>
+</section>
+</div>
+
+<script>
+const SUPABASE_URL='https://bsvasipbowfnmfthcsva.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_ey7g7DfPaG31yBaUr7rd_Q_nKD66Br0';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+const PRIOR=1/9;
+
+let game={role:null,turn:1,ended:false,suckerCount:0,turns:[],learning:false,startingGames:0};
+
+function show(id){['home','game','stats','rules'].forEach(x=>document.getElementById(x).classList.toggle('hidden',x!==id));}
+function openGame(){show('game');startGame();}
+async function startGame(){
+  game={role:Math.random()<0.5?'attack':'defense',turn:1,ended:false,suckerCount:0,turns:[],learning:false,startingGames:0};
+  document.getElementById('result').innerHTML='';
+  document.getElementById('gameCount').textContent='読み込み中…';
+  document.getElementById('roleLabel').textContent=game.role==='attack'?'あなたは攻撃側':'あなたは防御側';
+  await refreshGameInfo();
+  renderGame();
+}
+
+async function refreshGameInfo(){
+  const {data,error}=await sb.rpc('get_cpu_probabilities',{p_player_role:game.role,p_turn:game.turn});
+  if(error){
+    document.getElementById('gameCount').textContent='DB接続エラー';
+    document.getElementById('result').innerHTML='<div class="result error">データベースに接続できませんでした。<br><span class="small">少し待ってから再読み込みしてください。</span></div>';
+    game.ended=true;return;
+  }
+  game.startingGames=Number(data.total_games||0);
+  // ゲーム中は開始時点のモードを固定。100試合終了後に開始したゲームだけが学習モード。
+  if(game.turn===1) game.learning=game.startingGames>=100;
+  document.getElementById('gameCount').textContent=`累積 ${game.startingGames} 試合`;
+}
+
+function renderGame(){
+  document.getElementById('turnLabel').textContent=`第${game.turn}ターン`;
+  document.getElementById('roleLabel').textContent=game.role==='attack'?'あなたは攻撃側':'あなたは防御側';
+  const hint=game.role==='attack'?'「攻撃技」か「ふいうち」を選んでください。':'「剣舞」か「攻撃」を選んでください。';
+  document.getElementById('hint').textContent=hint;
+  const c=document.getElementById('choices');
+  if(game.role==='attack'){
+    c.innerHTML=`<button class="choice" id="attackMove" onclick="play('attack_move')"><strong>攻撃技</strong><span>決着を狙う</span></button><button class="choice" id="sucker" onclick="play('sucker_punch')"><strong>ふいうち</strong><span>最大8回まで</span></button>`;
+    document.getElementById('sucker').disabled=game.suckerCount>=8 || game.turn===9;
+  }else{
+    c.innerHTML=`<button class="choice" onclick="play('sword_dance')"><strong>剣舞</strong><span>ふいうちを誘う</span></button><button class="choice" onclick="play('attack')"><strong>攻撃</strong><span>攻撃技を迎え撃つ</span></button>`;
+  }
+}
+
+async function getCpuChoice(){
+  // 第9ターンは攻撃側が必ず攻撃技。CPUが攻撃側なら固定。
+  if(game.turn===9 && game.role==='defense') return 'attack_move';
+
+  const {data,error}=await sb.rpc('get_cpu_probabilities',{p_player_role:game.role,p_turn:game.turn});
+  if(error) throw error;
+  let pAttack=Number(data.attack_rate);
+  if(!Number.isFinite(pAttack)) pAttack=PRIOR;
+  pAttack=Math.max(0,Math.min(1,pAttack));
+
+  if(game.role==='attack'){
+    // CPUは防御側：「攻撃」= 人間の攻撃技率、「剣舞」= 人間のふいうち率
+    return Math.random()<pAttack?'attack':'sword_dance';
+  }
+  // CPUは攻撃側：「攻撃技」= 人間の攻撃率、「ふいうち」= 人間の剣舞率
+  if(game.turn===9) return 'attack_move';
+  return Math.random()<pAttack?'attack_move':'sucker_punch';
+}
+
+async function play(playerChoice){
+  if(game.ended)return;
+  if(game.role==='attack' && playerChoice==='sucker_punch'){
+    if(game.suckerCount>=8 || game.turn===9)return;
+    game.suckerCount++;
+  }
+
+  const buttons=document.querySelectorAll('.choice');buttons.forEach(b=>b.disabled=true);
+  let cpu;
+  try{cpu=await getCpuChoice();}
+  catch(e){
+    buttons.forEach(b=>b.disabled=false);
+    document.getElementById('result').innerHTML='<div class="result error">CPUの確率取得に失敗しました。</div>';
+    return;
+  }
+
+  game.turns.push({turn:game.turn,player:playerChoice,cpu});
+  const playerAttack=game.role==='attack'?playerChoice:cpu;
+  const defense=game.role==='attack'?cpu:playerChoice;
+  const outcome=resolve(playerAttack,defense);
+
+  if(outcome==='draw'){
+    if(game.turn===9){
+      // 9ターン目まで引き分けなら終了（攻撃側が勝っていないため決着なし扱い）
+      await finish('draw','第9ターンまで引き分けでした。');
+    }else{
+      game.turn++;
+      renderGame();
+      document.getElementById('result').innerHTML='<div class="result">引き分け<br><span class="small">次のターンへ</span></div>';
+    }
+  }else{
+    const playerWin=(game.role==='attack' && outcome==='attack_win')||(game.role==='defense' && outcome==='defense_win');
+    await finish(playerWin?'player_win':'player_loss',playerWin?'あなたの勝ち！':'あなたの負け…');
+  }
+}
+
+function resolve(attack,defense){
+  if(attack==='attack_move' && defense==='sword_dance')return 'attack_win';
+  if(attack==='attack_move' && defense==='attack')return 'defense_win';
+  if(attack==='sucker_punch' && defense==='sword_dance')return 'draw';
+  if(attack==='sucker_punch' && defense==='attack')return 'attack_win';
+  throw new Error('Invalid combination');
+}
+
+async function finish(result,msg){
+  game.ended=true;
+  const payload={p_player_role:game.role,p_turn_count:game.turn,p_result:result,p_turns:game.turns};
+  const {data,error}=await sb.rpc('record_game',payload);
+  if(error){
+    document.getElementById('result').innerHTML=`<div class="result error">試合結果の保存に失敗しました。<br><span class="small">${escapeHtml(error.message||'Database error')}</span></div>`;
+    return;
+  }
+  const n=Number(data);
+  document.getElementById('gameCount').textContent=`累積 ${n} 試合`;
+  document.getElementById('result').innerHTML=`<div class="result">${msg}<br><span class="small">第${n}試合として記録しました。</span><br><button style="margin-top:14px;border:0;border-radius:12px;padding:12px 18px;background:#e9edff;font-weight:700" onclick="startGame()">もう一度遊ぶ</button></div>`;
+}
+
+async function openStats(){show('stats');await renderStats();}
+function pct(a,b){return b?((100*a/b).toFixed(1)+'%'):'—';}
+async function renderStats(){
+  document.getElementById('unlock').textContent='読み込み中…';
+  const {data,error}=await sb.rpc('get_public_stats');
+  if(error){document.getElementById('unlock').textContent='接続エラー';document.getElementById('statTable').innerHTML='<div class="note error">統計を取得できませんでした。</div>';return;}
+  const total=Number(data.total_games||0);document.getElementById('totalGames').textContent=total;
+  if(!data.revealed){document.getElementById('unlock').textContent=`公開まであと ${100-total} 試合`;document.getElementById('avgTurn').textContent='—';document.getElementById('statTable').innerHTML='<div class="note">100試合終了後に統計が公開されます。</div>';return;}
+  document.getElementById('unlock').textContent='統計公開・CPU学習中';
+  document.getElementById('avgTurn').textContent=Number(data.avg_turn||0).toFixed(2);
+  const a=Object.fromEntries((data.attack_side||[]).map(x=>[Number(x.turn),x]));
+  const d=Object.fromEntries((data.defense_side||[]).map(x=>[Number(x.turn),x]));
+  let html='<table><tr><th>ターン</th><th>攻撃側<br>攻撃技</th><th>攻撃側<br>ふいうち</th><th>防御側<br>攻撃</th><th>防御側<br>剣舞</th></tr>';
+  for(let i=1;i<=9;i++){
+    const x=a[i]||{attack_move:0,sucker_punch:0},y=d[i]||{attack:0,sword_dance:0};
+    const an=Number(x.attack_move)+Number(x.sucker_punch),dn=Number(y.attack)+Number(y.sword_dance);
+    html+=`<tr><td>${i}</td><td>${pct(Number(x.attack_move),an)}</td><td>${pct(Number(x.sucker_punch),an)}</td><td>${pct(Number(y.attack),dn)}</td><td>${pct(Number(y.sword_dance),dn)}</td></tr>`;
+  }
+  document.getElementById('statTable').innerHTML=html+'</table>';
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+show('home');
+</script>
+</body>
+</html>
